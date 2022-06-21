@@ -4,6 +4,7 @@
 #include <jsapi.h>
 
 #include <string>
+#include <vector>
 #include <optional>
 #include <fstream>
 
@@ -26,6 +27,7 @@ struct BenchState {
     std::ofstream stderr;
     std::optional<std::ifstream> stdin;
     std::optional<std::string> execution_flags;
+    std::vector<std::optional<std::fstream>> fd_table;
 
     void *compilation_timer;
     TimerCallback compilation_start;

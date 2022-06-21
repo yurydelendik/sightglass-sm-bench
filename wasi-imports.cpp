@@ -14,6 +14,7 @@
 
 #include "wasi-imports.h"
 #include "bench-state.h"
+#include "wasi-api.h"
 
 static bool GetWasmMemory(JSContext* cx, JS::HandleObject global, uint8_t **data_out, size_t *len_out)
 {
@@ -79,23 +80,71 @@ bool WasiFdWrite(JSContext* cx, unsigned argc, JS::Value* vp)
   }
   *(uint32_t*)(data + written_ptr) = total;
 
-  args.rval().setInt32(0);
+  args.rval().setInt32(__WASI_ERRNO_SUCCESS);
   return true;
 }
 bool WasiPathOpen(JSContext* cx, unsigned argc, JS::Value* vp)
 {
-  fprintf(stderr, "-----WasiPathOpen\n");
-  return false;
+  JS::RootedObject global(cx, JS::CurrentGlobalOrNull(cx));
+  BenchState* state = JS::GetMaybePtrFromReservedSlot<BenchState>(global, 0);
+  uint8_t *data; size_t length;
+  if (!GetWasmMemory(cx, global, &data, &length)) return false;
+
+  JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
+  int dir_fd = args.get(0).toInt32();
+  int dir_flags = args.get(1).toInt32();
+  int path_ptr = args.get(2).toInt32();
+  int path_len = args.get(3).toInt32();
+  int o_flags = args.get(4).toInt32();
+  int fd_out = args.get(8).toInt32();
+  if (dir_fd == 3) {
+    std::string path((const char*)(data + path_ptr), path_len);
+    std::string full_path = state->working_dir + "/" + path;
+    std::fstream f(full_path);
+    state->fd_table.push_back(std::move(f));
+    *(uint32_t*)(data + fd_out) = state->fd_table.size() + 4;
+    args.rval().setInt32(__WASI_ERRNO_SUCCESS);
+  } else {
+    args.rval().setInt32(__WASI_ERRNO_BADF);
+  }
+  return true;
 }
 bool WasiFdPrestatGet(JSContext* cx, unsigned argc, JS::Value* vp)
 {
-  fprintf(stderr, "-----WasiFdPrestatGet\n");
-  return false;
+  JS::RootedObject global(cx, JS::CurrentGlobalOrNull(cx));
+  uint8_t *data; size_t length;
+  if (!GetWasmMemory(cx, global, &data, &length)) return false;
+
+  JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
+  int fd = args.get(0).toInt32();
+  int ptr = args.get(1).toInt32();
+  if (fd == 3) {
+    args.rval().setInt32(__WASI_ERRNO_SUCCESS);
+    wasi_api::__wasi_prestat_t *entry = (wasi_api::__wasi_prestat_t*)(data + ptr);
+    entry->tag = 0;
+    entry->u.dir.pr_name_len = 1;
+  } else {
+    args.rval().setInt32(__WASI_ERRNO_BADF);
+  }
+  return true;
 }
 bool WasiFdPrestatDirName(JSContext* cx, unsigned argc, JS::Value* vp)
 {
-  fprintf(stderr, "-----WasiFdPrestatDirName\n");
-  return false;
+  JS::RootedObject global(cx, JS::CurrentGlobalOrNull(cx));
+  uint8_t *data; size_t length;
+  if (!GetWasmMemory(cx, global, &data, &length)) return false;
+
+  JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
+  int fd = args.get(0).toInt32();
+  int ptr = args.get(1).toInt32();
+  int len_ptr = args.get(2).toInt32();
+  if (fd == 3) {
+    args.rval().setInt32(__WASI_ERRNO_SUCCESS);
+    *(uint32_t*)(data + ptr) = '.';
+  } else {
+    args.rval().setInt32(__WASI_ERRNO_BADF);
+  }
+  return true;
 }
 bool WasiProcExit(JSContext* cx, unsigned argc, JS::Value* vp)
 {
@@ -115,7 +164,7 @@ bool WasiEnvironSizesGet(JSContext* cx, unsigned argc, JS::Value* vp)
   *(uint32_t*)(data + count_ptr) = 0;
   *(uint32_t*)(data + size_ptr) = 0;
 
-  args.rval().setInt32(0);
+  args.rval().setInt32(__WASI_ERRNO_SUCCESS);
   return true;
 }
 bool WasiEnvironGet(JSContext* cx, unsigned argc, JS::Value* vp)

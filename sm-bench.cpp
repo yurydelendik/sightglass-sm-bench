@@ -92,6 +92,9 @@ ExitCode wasm_bench_create(WasmBenchConfig config, void **out_bench_pt)
     if (flags == "baseline") {
       enableIon = false;
       enableBaseline = true;
+    } else if (flags == "ion") {
+      enableIon = true;
+      enableBaseline = false;
     } else if (flags == "tier") {
       enableBaseline = true;
     }
