@@ -28,6 +28,11 @@ struct WasiPtr {
   uint32_t p;
 };
 
+template<class T>
+static T* operator+(uint8_t* p, WasiPtr<T> i) {
+  return (T*)(p + i.p);
+}
+
 _Static_assert(_Alignof(int8_t) == 1, "non-wasi data layout");
 _Static_assert(_Alignof(uint8_t) == 1, "non-wasi data layout");
 _Static_assert(_Alignof(int16_t) == 2, "non-wasi data layout");
@@ -1399,7 +1404,7 @@ _Static_assert(_Alignof(__wasi_prestat_t) == 4, "witx calculated align");
  * Each argument is expected to be `\0` terminated.
  */
 __wasi_errno_t __wasi_args_get(
-    WasiPtr<uint8_t>  * argv,
+    WasiPtr<WasiPtr<uint8_t>> argv,
     WasiPtr<uint8_t>  argv_buf
 ) __attribute__((__warn_unused_result__));
 /**

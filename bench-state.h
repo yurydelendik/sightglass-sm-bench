@@ -17,17 +17,26 @@ struct JSEngineState {
     JSEngineState(JSContext *cx_) : cx(cx_), global(cx_), module(cx_), instance(cx_) {}
 };
 
+struct FdEntry {
+    std::optional<std::fstream> file;
+    std::string path;
+    bool is_dir;
+    uint32_t flags;
+
+    FdEntry() = default;
+    FdEntry(std::fstream&& file_) : file(std::move(file_)), path(), is_dir(false) {}
+    FdEntry(std::fstream&& file_, std::string&& path_) : file(std::move(file_)), path(path_), is_dir(false) {}
+};
+
+const size_t PREOPEN_DIR_FD = 3;
+
 struct BenchState {
     typedef void (*TimerCallback)(void *timer);
 
     std::optional<JSEngineState> js;
 
-    std::string working_dir;
-    std::ofstream stdout;
-    std::ofstream stderr;
-    std::optional<std::ifstream> stdin;
     std::optional<std::string> execution_flags;
-    std::vector<std::optional<std::fstream>> fd_table;
+    std::vector<std::optional<FdEntry>> fd_table;
 
     void *compilation_timer;
     TimerCallback compilation_start;

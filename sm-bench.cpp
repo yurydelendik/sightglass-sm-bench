@@ -57,12 +57,24 @@ static void ReportAndClearException(JSContext* cx) {
 ExitCode wasm_bench_create(WasmBenchConfig config, void **out_bench_pt)
 {
   auto bench = std::make_unique<BenchState>();
-  bench->working_dir = std::string(config.working_dir_ptr, config.working_dir_len);
-  bench->stdout.open(std::string(config.stdout_path_ptr, config.stdout_path_len));
-  bench->stderr.open(std::string(config.stderr_path_ptr, config.stderr_path_len));
+
   if (config.stdin_path_ptr) {
-    bench->stdin = std::ifstream(std::string(config.stdin_path_ptr, config.stdin_path_len));
+    std::string stdin_path(config.stdin_path_ptr, config.stdin_path_len);
+    FdEntry stdin(std::fstream(stdin_path, std::fstream::in));
+    bench->fd_table.emplace_back(std::move(stdin));
+  } else {
+    bench->fd_table.push_back(std::nullopt);
   }
+  std::string stdout_path(config.stdout_path_ptr, config.stdout_path_len);
+  FdEntry stdout(std::fstream(stdout_path, std::fstream::out));
+  bench->fd_table.emplace_back(std::move(stdout));
+  std::string stderr_path(config.stderr_path_ptr, config.stderr_path_len);
+  FdEntry stderr(std::fstream(stderr_path, std::fstream::out));
+  bench->fd_table.emplace_back(std::move(stderr));
+  std::string working_dir(config.working_dir_ptr, config.working_dir_len);
+  FdEntry fd3; fd3.path = working_dir; fd3.is_dir = true;
+  bench->fd_table.emplace_back(std::move(fd3));
+
   if (config.execution_flags_ptr) {
     bench->execution_flags = std::string(config.execution_flags_ptr, config.execution_flags_len);
   }
