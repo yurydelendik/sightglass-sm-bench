@@ -1865,6 +1865,7 @@ __wasi_errno_t __wasi_path_open(
      * `path_open::fd` directory.
      */
     WasiPtr<const char> path,
+    // ??? path_len
     /**
      * The method by which to open the file.
      */

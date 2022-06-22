@@ -8,10 +8,10 @@
 #include <js/WasmModule.h>
 #include <js/ArrayBuffer.h>
 #include <js/ArrayBufferMaybeShared.h>
+#include <js/BigInt.h>
 
 #include <fstream>
-#include <mutex>
-
+#include <random>
 #include <sys/stat.h>
 #include <time.h>
 
@@ -52,7 +52,19 @@ bool WasiFdClose(JSContext* cx, unsigned argc, JS::Value* vp)
   args.rval().setInt32(__WASI_ERRNO_SUCCESS);
   return true;
 }
-
+static void GetFilestat(const std::string &path, wasi_api::__wasi_filestat_t *p)
+{
+  struct stat buf = {0};
+  stat(path.c_str(), &buf);
+  p->dev = buf.st_dev;
+  p->ino = buf.st_ino;
+  p->filetype = (buf.st_mode & S_IFDIR) ? __WASI_FILETYPE_DIRECTORY : __WASI_FILETYPE_REGULAR_FILE;
+  p->nlink = buf.st_nlink;
+  p->size = buf.st_size;
+  p->atim = buf.st_atime;
+  p->mtim = buf.st_mtime;
+  p->ctim = buf.st_ctime;  
+}
 bool WasiFdFilestatGet(JSContext* cx, unsigned argc, JS::Value* vp)
 {
   JS::RootedObject global(cx, JS::CurrentGlobalOrNull(cx));
@@ -74,20 +86,10 @@ bool WasiFdFilestatGet(JSContext* cx, unsigned argc, JS::Value* vp)
     p->dev = -1;
     p->ino = fd;
     p->filetype = __WASI_FILETYPE_CHARACTER_DEVICE;
-    args.rval().setInt32(__WASI_ERRNO_SUCCESS);
-    return true;
+  } else {
+    GetFilestat(state->fd_table[fd]->path, p);
+    // TODO assert p->filetype == state->fd_table[fd]->is_dir
   }
-  struct stat buf = {0};
-  stat(state->fd_table[fd]->path.c_str(), &buf);
-  p->dev = buf.st_dev;
-  p->ino = buf.st_ino;
-  // TODO assert st_mode & S_IFDIR
-  p->filetype = state->fd_table[fd]->is_dir ? __WASI_FILETYPE_DIRECTORY : __WASI_FILETYPE_REGULAR_FILE;
-  p->nlink = buf.st_nlink;
-  p->size = buf.st_size;
-  p->atim = buf.st_atime;
-  p->mtim = buf.st_mtime;
-  p->ctim = buf.st_ctime;
   args.rval().setInt32(__WASI_ERRNO_SUCCESS);
   return true;
 }
@@ -129,16 +131,32 @@ bool WasiFdFdstatSetFlags(JSContext* cx, unsigned argc, JS::Value* vp)
   JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
   int fd = args.get(0).toInt32();
   int flags = args.get(1).toInt32();
-  //if (fd >= state->fd_table.size() || !state->fd_table[fd]) {
-    fprintf(stderr, "-----WasiFdFilestatSetFlags %d %d\n", fd, flags);
-    return false;
-  //}
+  fprintf(stderr, "-----WasiFdFilestatSetFlags %d %d\n", fd, flags);
+  return false;
 }
 
 bool WasiFdSeek(JSContext* cx, unsigned argc, JS::Value* vp)
 {
-  fprintf(stderr, "-----WasiFdSeek\n");
-  return false;
+  JS::RootedObject global(cx, JS::CurrentGlobalOrNull(cx));
+  BenchState* state = JS::GetMaybePtrFromReservedSlot<BenchState>(global, 0);
+  uint8_t *data; size_t length;
+  if (!GetWasmMemory(cx, global, &data, &length)) return false;
+
+  JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
+  int fd = args.get(0).toInt32();
+  int64_t offset = JS::ToBigInt64(args.get(1).toBigInt());
+  int whence = args.get(2).toInt32();
+  int ptr = args.get(3).toInt32();
+  if (fd >= state->fd_table.size() || !state->fd_table[fd] ||
+     state->fd_table[fd]->is_dir) {
+    fprintf(stderr, "-----WasiFdSeek %d\n", fd);
+    return false;
+  }
+  std::fstream* s = &*(state->fd_table[fd]->file);
+  s->seekg(offset, (std::ios_base::seekdir)whence);
+  *(int64_t *)(data + ptr) = s->tellg();
+  args.rval().setInt32(__WASI_ERRNO_SUCCESS);
+  return true;
 }
 bool WasiFdRead(JSContext* cx, unsigned argc, JS::Value* vp)
 {
@@ -231,15 +249,42 @@ bool WasiPathOpen(JSContext* cx, unsigned argc, JS::Value* vp)
   if (dir_fd == PREOPEN_DIR_FD) {
     std::string path((const char*)(data + path_ptr), path_len);
     std::string full_path = state->fd_table[dir_fd]->path + "/" + path;
-    std::fstream f(full_path);
+    std::fstream f(full_path, std::ios_base::in);
     FdEntry entry(std::move(f), std::move(full_path));
     state->fd_table.push_back(std::move(entry));
-
+  
     *(uint32_t*)(data + fd_out) = state->fd_table.size() - 1;
     args.rval().setInt32(__WASI_ERRNO_SUCCESS);
   } else {
     args.rval().setInt32(__WASI_ERRNO_BADF);
   }
+  return true;
+}
+bool WasiPathFilestatGet(JSContext* cx, unsigned argc, JS::Value* vp)
+{
+  JS::RootedObject global(cx, JS::CurrentGlobalOrNull(cx));
+  BenchState* state = JS::GetMaybePtrFromReservedSlot<BenchState>(global, 0);
+  uint8_t *data; size_t length;
+  if (!GetWasmMemory(cx, global, &data, &length)) return false;
+
+  JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
+  int fd = args.get(0).toInt32();
+  int path_ptr = args.get(2).toInt32();
+  int path_len = args.get(3).toInt32();
+  int ptr = args.get(4).toInt32();
+
+  if (fd >= state->fd_table.size() || !state->fd_table[fd] ||
+      !state->fd_table[fd]->is_dir) {
+    
+    return false;
+  }
+
+  std::string path((const char*)(data + path_ptr), path_len);
+  std::string full_path = state->fd_table[fd]->path + "/" + path;
+
+  wasi_api::__wasi_filestat_t *p = (wasi_api::__wasi_filestat_t*)(data + ptr);
+  GetFilestat(full_path, p);
+  args.rval().setInt32(__WASI_ERRNO_SUCCESS);
   return true;
 }
 bool WasiPathRemoveDirectory(JSContext* cx, unsigned argc, JS::Value* vp)
@@ -396,6 +441,30 @@ bool WasiClockTimeGet(JSContext* cx, unsigned argc, JS::Value* vp)
   return true;
 }
 
+bool WasiRandomGet(JSContext* cx, unsigned argc, JS::Value* vp)
+{
+  JS::RootedObject global(cx, JS::CurrentGlobalOrNull(cx));
+  uint8_t *data; size_t length;
+  if (!GetWasmMemory(cx, global, &data, &length)) return false;
+
+  JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
+  int buf_ptr = args.get(0).toInt32();
+  int buf_len = args.get(1).toInt32();
+
+  uint8_t *buf = (uint8_t*)(data + buf_ptr);
+
+  using random_bytes_engine = std::independent_bits_engine<
+    std::default_random_engine, CHAR_BIT, unsigned char>;
+  
+  random_bytes_engine rbe;
+  for (int i = 0; i < buf_len; i++) {
+    buf[i] = rbe();
+  }
+
+  args.rval().setInt32(__WASI_ERRNO_SUCCESS);
+  return true;
+}
+
 JSObject* BuildWasiImports(JSContext *cx)
 {
   JS::RootedObject wasiImportObj(cx, JS_NewPlainObject(cx));
@@ -410,6 +479,7 @@ JSObject* BuildWasiImports(JSContext *cx)
   if (!JS_DefineFunction(cx, wasiImportObj, "path_open", WasiPathOpen, 9, 0)) return nullptr;
   if (!JS_DefineFunction(cx, wasiImportObj, "path_remove_directory", WasiPathRemoveDirectory, 2, 0)) return nullptr;
   if (!JS_DefineFunction(cx, wasiImportObj, "path_unlink_file", WasiPathUnlinkFile, 2, 0)) return nullptr;
+  if (!JS_DefineFunction(cx, wasiImportObj, "path_filestat_get", WasiPathFilestatGet, 5, 0)) return nullptr;
   if (!JS_DefineFunction(cx, wasiImportObj, "fd_prestat_get", WasiFdPrestatGet, 2, 0)) return nullptr;
   if (!JS_DefineFunction(cx, wasiImportObj, "fd_prestat_dir_name", WasiFdPrestatDirName, 3, 0)) return nullptr;
   if (!JS_DefineFunction(cx, wasiImportObj, "proc_exit", WasiProcExit, 1, 0)) return nullptr;
@@ -419,5 +489,6 @@ JSObject* BuildWasiImports(JSContext *cx)
   if (!JS_DefineFunction(cx, wasiImportObj, "args_get", WasiArgsGet, 2, 0)) return nullptr;
   if (!JS_DefineFunction(cx, wasiImportObj, "clock_res_get", WasiClockResGet, 2, 0)) return nullptr;
   if (!JS_DefineFunction(cx, wasiImportObj, "clock_time_get", WasiClockTimeGet, 3, 0)) return nullptr;
+  if (!JS_DefineFunction(cx, wasiImportObj, "random_get", WasiRandomGet, 2, 0)) return nullptr;
   return wasiImportObj;
 }
