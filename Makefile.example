@@ -1,0 +1,20 @@
+LIB_EXT=.dylib
+default: libsm-bench$(LIB_EXT)
+
+MOZJS_PREFIX=
+MOZJS_NAME=mozjs-102
+
+CPP=clang++
+CPP_FLAGS=-std=c++17 -fPIC -g -O3 \
+ -I${MOZJS_PREFIX}/include/${MOZJS_NAME} -L${MOZJS_PREFIX}/lib
+
+libsm-bench$(LIB_EXT): sm-bench.h sm-bench.cpp wasi-imports.h wasi-imports.cpp bench-state.h
+	$(CPP) $(CPP_FLAGS) sm-bench.cpp wasi-imports.cpp ${MOZJS_PREFIX}/lib/lib${MOZJS_NAME}$(LIB_EXT) \
+	 -shared -o libsm-bench$(LIB_EXT)
+
+clean:
+	rm -rf libsm-bench$(LIB_EXT)
+
+rebuild: clean default
+
+.PHONY: default clean rebuild

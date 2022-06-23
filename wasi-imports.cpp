@@ -411,7 +411,7 @@ bool WasiClockResGet(JSContext* cx, unsigned argc, JS::Value* vp)
   }
 
   struct timespec ts;
-  clock_getres(id, &ts);
+  clock_getres((clockid_t)id, &ts);
   *(int64_t*)(data + ret_ptr) = ts.tv_sec * 1000000000ll + ts.tv_nsec;
 
   args.rval().setInt32(__WASI_ERRNO_SUCCESS);
@@ -434,7 +434,7 @@ bool WasiClockTimeGet(JSContext* cx, unsigned argc, JS::Value* vp)
   }
 
   struct timespec ts;
-  clock_gettime(id, &ts);
+  clock_gettime((clockid_t)id, &ts);
   *(int64_t*)(data + ret_ptr) = ts.tv_sec * 1000000000ll + ts.tv_nsec;
 
   args.rval().setInt32(__WASI_ERRNO_SUCCESS);
