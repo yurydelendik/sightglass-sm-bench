@@ -362,8 +362,10 @@ bool WasiEnvironSizesGet(JSContext* cx, unsigned argc, JS::Value* vp)
 }
 bool WasiEnvironGet(JSContext* cx, unsigned argc, JS::Value* vp)
 {
-  fprintf(stderr, "-----WasiEnvironGet\n");
-  return false;
+  // nothing to return
+  JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
+  args.rval().setInt32(__WASI_ERRNO_SUCCESS);
+  return true;
 }
 bool WasiArgsSizesGet(JSContext* cx, unsigned argc, JS::Value* vp)
 {
