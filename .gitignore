@@ -1,4 +1,9 @@
 .vscode/*
 .DS_Store
 libsm-bench.*
+
 Makefile
+gecko-dev/
+mozilla-unified/
+_build/
+mozjs/
