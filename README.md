@@ -6,10 +6,6 @@ Experimental project to evaluate regressions in SM againt [sightglass tests](htt
 
 The project is using SpiderMonkey embedding. See https://github.com/mozilla-spidermonkey/spidermonkey-embedding-examples/blob/esr91/docs/Building%20SpiderMonkey.md on how to build the library
 
-Tested using the esr102 branch, there are couple of issues present:
-- https://bugzilla.mozilla.org/show_bug.cgi?id=1776255
-- https://bugzilla.mozilla.org/show_bug.cgi?id=1776254
-
 Rough steps to build mozjs library:
 1. Clone Firefox source code, e.g. `git clone --depth 1 -b beta https://github.com/mozilla/gecko-dev`
 2. Install all prereqs required to [build FF](https://firefox-source-docs.mozilla.org/setup/index.html), and recommended to run `./mach boostrap` in the cloned folder to configure for desktop builds
@@ -18,13 +14,12 @@ Rough steps to build mozjs library:
 ```
 mkdir _build && cd _build
 # for macos, edit ../gecko-dev/build/moz.configure/pkg.configure line 19 to remove `"OSX", `
-sh ../gecko-dev/js/src/configure.in \
+# see https://bugzilla.mozilla.org/show_bug.cgi?id=1776255
+sh ../gecko-dev/js/src/configure \
     --disable-jemalloc --with-system-zlib --with-intl-api \
     --enable-release --enable-optimize --prefix=$PWD/../mozjs
 make -j 8
 make install
-# missed file/header?
-cp dist/include/js/ProfilingCategoryList.h ../mozjs/include/mozjs-102/js/
 ```
 
 Back to main library build: just make a copy of Makefile and adjust the variables, then `make`.
